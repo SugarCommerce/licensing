@@ -20,9 +20,12 @@ namespace SugarCommerce\Licensing;
  * back. The mistakes it keeps out:
  *
  * - **A key for somebody else's product.** A key is a string anybody can
- *   buy, from any seller, in test mode, for nothing. Asked with a product,
- *   a key for another product is reported as not found — so asking
- *   reveals nothing about keys that are not yours.
+ *   buy, from any seller, in test mode, for nothing. Every call names the
+ *   product, and a key for another product is reported as not found — so
+ *   asking reveals nothing about keys that are not yours. There is no way
+ *   to skip it: an empty product is refused as
+ *   {@see Verdict::ProductRequired}, never read as "any product".
+ *   Scoping to a seller (one store per seller, say) is the store's.
  * - **A client-chosen instance id.** It is usually a site URL or a machine
  *   name, both guessable, and anything guessable releases somebody else's
  *   seat. The id is issued here, 128 random bits; a fingerprint survives
@@ -38,8 +41,8 @@ namespace SugarCommerce\Licensing;
  *   released elsewhere is the case that matters; validate() with an
  *   instance answers for the installation too.
  *
- * Precedence, when several are true: not found, revoked, expired, then the
- * installation.
+ * Precedence, when several are true: product required, not found,
+ * revoked, expired, then the installation.
  *
  * @since 1.0.0
  */
@@ -62,24 +65,24 @@ final readonly class Seats {
 	 * Check a key, and optionally one installation of it, changing nothing.
 	 *
 	 * @since 1.0.0
+	 * @since 1.1.0 The product is required, and second.
 	 *
 	 * @param string $key      Licence key.
+	 * @param string $product  The product the caller sells. Required: ''
+	 *                         is refused as ProductRequired, so a key bought
+	 *                         for another product, at any price, never
+	 *                         passes because a caller forgot to say.
 	 * @param string $instance An instance id to check as well, or ''.
-	 * @param string $product  The product the caller sells, or '' to skip
-	 *                         that check (your own screens only). Any
-	 *                         endpoint a seller's software calls must pass
-	 *                         it, or a key bought for another product, at
-	 *                         any price, passes.
 	 *
 	 * @return Check
 	 */
 	#[\NoDiscard( 'A key that is not valid must not unlock anything.' )]
-	public function validate( string $key, string $instance = '', string $product = '' ): Check {
-		$license = '' === $key ? null : $this->store->license( $key );
-
-		if ( null !== $license && '' !== $product && ! hash_equals( $license->product, $product ) ) {
-			$license = null;
+	public function validate( string $key, string $product, string $instance = '' ): Check {
+		if ( '' === $product ) {
+			return new Check( Verdict::ProductRequired );
 		}
+
+		$license = $this->license( $key, $product );
 
 		if ( null === $license ) {
 			return new Check( Verdict::NotFound );
@@ -102,8 +105,10 @@ final readonly class Seats {
 	 * Take a seat for an installation.
 	 *
 	 * @since 1.0.0
+	 * @since 1.1.0 The product is required, and second.
 	 *
 	 * @param string $key         Licence key.
+	 * @param string $product     The product the caller sells. Required.
 	 * @param string $name        What a person calls the machine or site.
 	 * @param string $fingerprint Stable client identifier, or ''. An
 	 *                            idempotency hint, never an authority; but
@@ -111,27 +116,29 @@ final readonly class Seats {
 	 *                            the matching seat's instance id, so it
 	 *                            should be random, not a URL or hostname.
 	 * @param string $ip          The client's address, for the store.
-	 * @param string $product     The product the caller sells, or ''.
 	 *
 	 * @return Activation
 	 */
 	#[\NoDiscard( 'A refused activation has no seat.' )]
-	public function claim( string $key, string $name, string $fingerprint = '', string $ip = '', string $product = '' ): Activation {
-		return $this->store->atomically( fn (): Activation => $this->take( $key, $name, $fingerprint, $ip, $product ) );
+	public function claim( string $key, string $product, string $name, string $fingerprint = '', string $ip = '' ): Activation {
+		return $this->store->atomically( fn (): Activation => $this->take( $key, $product, $name, $fingerprint, $ip ) );
 	}
 
 	/**
 	 * Give a seat back, by the instance id issued for it.
 	 *
 	 * @since 1.0.0
+	 * @since 1.1.0 The product is required: a key for another product
+	 *              releases nothing.
 	 *
 	 * @param string $key      Licence key.
+	 * @param string $product  The product the caller sells. Required.
 	 * @param string $instance The instance id from claim().
 	 *
 	 * @return Seat|null The seat as it was, when one was released.
 	 */
-	public function release( string $key, string $instance ): ?Seat {
-		$license = '' === $key || '' === $instance ? null : $this->store->license( $key );
+	public function release( string $key, string $product, string $instance ): ?Seat {
+		$license = '' === $instance ? null : $this->license( $key, $product );
 
 		if ( null === $license ) {
 			return null;
@@ -156,20 +163,41 @@ final readonly class Seats {
 	}
 
 	/**
+	 * A licence by its key, only when it is for the product named.
+	 *
+	 * @since 1.1.0
+	 *
+	 * @param string $key     Licence key.
+	 * @param string $product Product; '' finds nothing.
+	 *
+	 * @return License|null
+	 */
+	private function license( string $key, string $product ): ?License {
+		if ( '' === $key || '' === $product ) {
+			return null;
+		}
+
+		$license = $this->store->license( $key );
+
+		return null !== $license && hash_equals( $license->product, $product ) ? $license : null;
+	}
+
+	/**
 	 * The body of claim(), inside the store's transaction.
 	 *
 	 * @since 1.0.0
 	 *
 	 * @param string $key         Licence key.
+	 * @param string $product     Product.
 	 * @param string $name        Name.
 	 * @param string $fingerprint Fingerprint, or ''.
 	 * @param string $ip          Address.
-	 * @param string $product     Product, or ''.
 	 *
 	 * @return Activation The claim, or why it was refused.
 	 */
-	private function take( string $key, string $name, string $fingerprint, string $ip, string $product ): Activation {
-		$check = $this->validate( $key, '', $product );
+	private function take( string $key, string $product, string $name, string $fingerprint, string $ip ): Activation {
+		$check = $this->validate( $key, $product );
+
 
 		if ( ! $check->valid() || null === $check->license ) {
 			return new Activation( null, $check->verdict );

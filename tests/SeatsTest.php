@@ -41,7 +41,7 @@ final class SeatsTest extends TestCase {
 	/* ─── Validating ────────────────────────────────────────────────── */
 
 	public function test_a_good_key_is_valid(): void {
-		$check = $this->seats()->validate( 'KEY-ONE', '', 'prod_A' );
+		$check = $this->seats()->validate( 'KEY-ONE', 'prod_A' );
 
 		$this->assertTrue( $check->valid() );
 		$this->assertSame( Verdict::Ok, $check->verdict );
@@ -54,11 +54,30 @@ final class SeatsTest extends TestCase {
 	 * as not found, so asking reveals nothing about it.
 	 */
 	public function test_a_key_for_another_product_is_not_found(): void {
-		$check = $this->seats()->validate( 'KEY-OTHER', '', 'prod_A' );
+		$check = $this->seats()->validate( 'KEY-OTHER', 'prod_A' );
 
 		$this->assertSame( Verdict::NotFound, $check->verdict );
 		$this->assertNull( $check->license );
-		$this->assertTrue( $this->seats()->validate( 'KEY-OTHER' )->valid(), 'Without a product, our own screens see it.' );
+		$this->assertTrue( $this->seats()->validate( 'KEY-OTHER', 'prod_B' )->valid() );
+	}
+
+	/**
+	 * There is no "any product". An empty one used to skip the check, so a
+	 * caller that forgot to send it accepted every key anybody sold.
+	 */
+	public function test_the_product_cannot_be_left_out(): void {
+		$check = $this->seats()->validate( 'KEY-ONE', '' );
+
+		$this->assertSame( Verdict::ProductRequired, $check->verdict );
+		$this->assertNull( $check->license );
+		$this->assertSame( Verdict::ProductRequired, $this->seats()->claim( 'KEY-ONE', '', 'Laptop' )->verdict );
+		$this->assertSame( array(), $this->store->seats, 'Nothing claimed.' );
+
+		$seat = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop' )->seat;
+
+		$this->assertNull( $this->seats()->release( 'KEY-ONE', 'prod_A', '', (string) $seat?->instance ) );
+		$this->assertNull( $this->seats()->release( 'KEY-ONE', 'prod_A', 'prod_B', (string) $seat?->instance ), 'Another product releases nothing.' );
+		$this->assertTrue( $this->store->seats[0]['active'] );
 	}
 
 	/**
@@ -75,13 +94,13 @@ final class SeatsTest extends TestCase {
 
 	#[DataProvider( 'verdicts' )]
 	public function test_a_bad_key_says_why( string $key, Verdict $verdict ): void {
-		$this->assertSame( $verdict, $this->seats()->validate( $key )->verdict );
+		$this->assertSame( $verdict, $this->seats()->validate( $key, 'prod_A' )->verdict );
 	}
 
 	public function test_expiry_is_to_the_second(): void {
 		$this->store->licenses['KEY-NOW'] = new License( 9, 'prod_A', 1, expires_at: self::NOW );
 
-		$this->assertTrue( $this->seats()->validate( 'KEY-NOW' )->valid(), 'Still good at its last second.' );
+		$this->assertTrue( $this->seats()->validate( 'KEY-NOW', 'prod_A' )->valid(), 'Still good at its last second.' );
 	}
 
 	/**
@@ -89,25 +108,25 @@ final class SeatsTest extends TestCase {
 	 * a client checking only the key never sees.
 	 */
 	public function test_an_installation_is_checked_as_well_as_the_key(): void {
-		$seat = $this->seats()->claim( 'KEY-TWO', 'Laptop' )->seat;
+		$seat = $this->seats()->claim( 'KEY-TWO', 'prod_A', 'Laptop' )->seat;
 
-		$this->assertTrue( $this->seats()->validate( 'KEY-TWO', (string) $seat?->instance )->valid() );
-		$this->assertSame( Verdict::InstanceNotFound, $this->seats()->validate( 'KEY-TWO', 'not-an-instance' )->verdict );
+		$this->assertTrue( $this->seats()->validate( 'KEY-TWO', 'prod_A', (string) $seat?->instance )->valid() );
+		$this->assertSame( Verdict::InstanceNotFound, $this->seats()->validate( 'KEY-TWO', 'prod_A', 'not-an-instance' )->verdict );
 
-		$this->assertNotNull( $this->seats()->release( 'KEY-TWO', (string) $seat?->instance ) );
-		$this->assertSame( Verdict::InstanceDeactivated, $this->seats()->validate( 'KEY-TWO', (string) $seat?->instance )->verdict );
+		$this->assertNotNull( $this->seats()->release( 'KEY-TWO', 'prod_A', (string) $seat?->instance ) );
+		$this->assertSame( Verdict::InstanceDeactivated, $this->seats()->validate( 'KEY-TWO', 'prod_A', (string) $seat?->instance )->verdict );
 	}
 
 	public function test_an_instance_of_another_key_is_not_found(): void {
-		$seat = $this->seats()->claim( 'KEY-ONE', 'Laptop' )->seat;
+		$seat = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop' )->seat;
 
-		$this->assertSame( Verdict::InstanceNotFound, $this->seats()->validate( 'KEY-TWO', (string) $seat?->instance )->verdict );
+		$this->assertSame( Verdict::InstanceNotFound, $this->seats()->validate( 'KEY-TWO', 'prod_A', (string) $seat?->instance )->verdict );
 	}
 
 	/* ─── Claiming ──────────────────────────────────────────────────── */
 
 	public function test_a_seat_is_claimed_with_an_id_we_issue(): void {
-		$taken = $this->seats()->claim( 'KEY-ONE', 'Laptop', 'https://my-site.example', '203.0.113.5', 'prod_A' );
+		$taken = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop', 'https://my-site.example', '203.0.113.5' );
 
 		$this->assertTrue( $taken->ok() );
 		$this->assertSame( Claim::Activated, $taken->claim );
@@ -120,9 +139,9 @@ final class SeatsTest extends TestCase {
 	}
 
 	public function test_the_last_seat_cannot_be_taken_twice(): void {
-		$this->assertTrue( $this->seats()->claim( 'KEY-ONE', 'Laptop' )->ok() );
+		$this->assertTrue( $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop' )->ok() );
 
-		$refused = $this->seats()->claim( 'KEY-ONE', 'Desktop' );
+		$refused = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Desktop' );
 
 		$this->assertFalse( $refused->ok() );
 		$this->assertSame( Verdict::LimitReached, $refused->verdict );
@@ -136,8 +155,8 @@ final class SeatsTest extends TestCase {
 	 * than burning another.
 	 */
 	public function test_the_same_fingerprint_gets_its_seat_back(): void {
-		$first = $this->seats()->claim( 'KEY-ONE', 'Laptop', 'fp-1' );
-		$again = $this->seats()->claim( 'KEY-ONE', 'Laptop', 'fp-1' );
+		$first = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop', 'fp-1' );
+		$again = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop', 'fp-1' );
 
 		$this->assertSame( Claim::AlreadyActive, $again->claim );
 		$this->assertFalse( $again->claim->changed(), 'Nothing to announce.' );
@@ -147,11 +166,11 @@ final class SeatsTest extends TestCase {
 	}
 
 	public function test_a_released_fingerprint_is_reactivated_while_there_is_room(): void {
-		$first = $this->seats()->claim( 'KEY-ONE', 'Laptop', 'fp-1' );
+		$first = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop', 'fp-1' );
 
-		$this->seats()->release( 'KEY-ONE', (string) $first->seat?->instance );
+		$this->seats()->release( 'KEY-ONE', 'prod_A', (string) $first->seat?->instance );
 
-		$back = $this->seats()->claim( 'KEY-ONE', 'Laptop, renamed', 'fp-1' );
+		$back = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop, renamed', 'fp-1' );
 
 		$this->assertSame( Claim::Reactivated, $back->claim );
 		$this->assertTrue( $back->claim->changed() );
@@ -160,20 +179,20 @@ final class SeatsTest extends TestCase {
 	}
 
 	public function test_a_released_fingerprint_waits_for_room(): void {
-		$first = $this->seats()->claim( 'KEY-ONE', 'Laptop', 'fp-1' );
+		$first = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop', 'fp-1' );
 
-		$this->seats()->release( 'KEY-ONE', (string) $first->seat?->instance );
-		$this->assertTrue( $this->seats()->claim( 'KEY-ONE', 'Desktop', 'fp-2' )->ok() );
+		$this->seats()->release( 'KEY-ONE', 'prod_A', (string) $first->seat?->instance );
+		$this->assertTrue( $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Desktop', 'fp-2' )->ok() );
 
-		$this->assertSame( Verdict::LimitReached, $this->seats()->claim( 'KEY-ONE', 'Laptop', 'fp-1' )->verdict );
+		$this->assertSame( Verdict::LimitReached, $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop', 'fp-1' )->verdict );
 	}
 
 	public function test_a_bad_key_claims_nothing(): void {
 		foreach ( array( 'KEY-REVOKED' => Verdict::Revoked, 'KEY-EXPIRED' => Verdict::Expired, 'NOPE' => Verdict::NotFound ) as $key => $verdict ) {
-			$this->assertEquals( new Activation( null, $verdict ), $this->seats()->claim( $key, 'Laptop' ), $key );
+			$this->assertEquals( new Activation( null, $verdict ), $this->seats()->claim( $key, 'prod_A', 'Laptop' ), $key );
 		}
 
-		$this->assertSame( Verdict::NotFound, $this->seats()->claim( 'KEY-OTHER', 'Laptop', product: 'prod_A' )->verdict );
+		$this->assertSame( Verdict::NotFound, $this->seats()->claim( 'KEY-OTHER', 'prod_A', 'Laptop' )->verdict );
 		$this->assertSame( array(), $this->store->seats );
 	}
 
@@ -182,8 +201,8 @@ final class SeatsTest extends TestCase {
 	 * activations each count the same free seat.
 	 */
 	public function test_claiming_is_one_transaction(): void {
-		(void) $this->seats()->claim( 'KEY-TWO', 'Laptop' );
-		(void) $this->seats()->claim( 'KEY-TWO', 'Laptop', 'fp' );
+		(void) $this->seats()->claim( 'KEY-TWO', 'prod_A', 'Laptop' );
+		(void) $this->seats()->claim( 'KEY-TWO', 'prod_A', 'Laptop', 'fp' );
 
 		$this->assertSame( 0, $this->store->loose_writes );
 	}
@@ -191,22 +210,22 @@ final class SeatsTest extends TestCase {
 	/* ─── Releasing ─────────────────────────────────────────────────── */
 
 	public function test_a_seat_is_released_by_its_instance_and_kept(): void {
-		$seat     = $this->seats()->claim( 'KEY-ONE', 'Laptop' )->seat;
-		$released = $this->seats()->release( 'KEY-ONE', (string) $seat?->instance );
+		$seat     = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop' )->seat;
+		$released = $this->seats()->release( 'KEY-ONE', 'prod_A', (string) $seat?->instance );
 
 		$this->assertSame( $seat?->instance, $released?->instance );
 		$this->assertTrue( $released?->active, 'The seat as it was.' );
 		$this->assertFalse( $this->store->seats[0]['active'] );
 		$this->assertCount( 1, $this->store->seats, 'The history stays.' );
-		$this->assertNull( $this->seats()->release( 'KEY-ONE', (string) $seat?->instance ), 'Only once.' );
+		$this->assertNull( $this->seats()->release( 'KEY-ONE', 'prod_A', (string) $seat?->instance ), 'Only once.' );
 	}
 
 	public function test_nothing_is_released_by_a_guess(): void {
-		$seat = $this->seats()->claim( 'KEY-ONE', 'Laptop' )->seat;
+		$seat = $this->seats()->claim( 'KEY-ONE', 'prod_A', 'Laptop' )->seat;
 
-		$this->assertNull( $this->seats()->release( 'KEY-ONE', '' ) );
-		$this->assertNull( $this->seats()->release( 'KEY-TWO', (string) $seat?->instance ), 'Another key\'s seat.' );
-		$this->assertNull( $this->seats()->release( 'NOPE', (string) $seat?->instance ) );
+		$this->assertNull( $this->seats()->release( 'KEY-ONE', 'prod_A', '' ) );
+		$this->assertNull( $this->seats()->release( 'KEY-TWO', 'prod_A', (string) $seat?->instance ), 'Another key\'s seat.' );
+		$this->assertNull( $this->seats()->release( 'NOPE', 'prod_A', (string) $seat?->instance ) );
 		$this->assertTrue( $this->store->seats[0]['active'] );
 	}
 

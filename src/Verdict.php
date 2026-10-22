@@ -62,7 +62,8 @@ enum Verdict: string {
 	case LimitReached = 'limit_reached';
 
 	/**
-	 * For the caller's endpoint to return when no product was sent; never returned by {@see Seats}.
+	 * No product was named. {@see Seats} returns it for an empty product
+	 * (since 1.1.0) rather than skipping the check.
 	 */
 	case ProductRequired = 'product_required';
 
