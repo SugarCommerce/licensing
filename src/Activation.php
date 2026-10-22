@@ -25,6 +25,8 @@ namespace SugarCommerce\Licensing;
 final readonly class Activation {
 
 	/**
+	 * Record the outcome of a claim. Only {@see Seats::claim()} makes one.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @param Claim|null $claim   How the seat was had; null when refused.
@@ -61,6 +63,6 @@ final readonly class Activation {
 	 * @return string e.g. `activated`, `limit_reached`.
 	 */
 	public function reason(): string {
-		return $this->claim?->value ?? $this->verdict->value;
+		return $this->claim->value ?? $this->verdict->value;
 	}
 }

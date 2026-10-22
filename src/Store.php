@@ -71,7 +71,9 @@ interface Store {
 	 * A seat the same client claimed before, by its fingerprint.
 	 *
 	 * For idempotency only — a reinstall gets its seat back — never for
-	 * authorising anything: fingerprints are guessable.
+	 * authorising anything: fingerprints are guessable. Whatever this
+	 * returns is handed back to the client, instance id included, by
+	 * {@see Seats::claim()}.
 	 *
 	 * @since 1.0.0
 	 *

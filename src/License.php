@@ -25,6 +25,8 @@ namespace SugarCommerce\Licensing;
 final readonly class License {
 
 	/**
+	 * Describe a licence. The {@see Store} builds these from its rows.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @param int|string           $id         The store's id for it.

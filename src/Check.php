@@ -15,11 +15,17 @@ namespace SugarCommerce\Licensing;
 /**
  * Class Check
  *
+ * What {@see Seats::validate()} found: the verdict, and the licence and
+ * seat it was reached from, for the caller to show or log. A licence for
+ * another product is never here, so a refused key reveals nothing.
+ *
  * @since 1.0.0
  */
 final readonly class Check {
 
 	/**
+	 * Record the outcome of a check. Only {@see Seats::validate()} makes one.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @param Verdict      $verdict Why.

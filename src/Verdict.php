@@ -26,15 +26,50 @@ namespace SugarCommerce\Licensing;
  */
 enum Verdict: string {
 
-	case Ok                  = 'ok';
-	case NotFound            = 'not_found';
-	case Revoked             = 'revoked';
-	case Expired             = 'expired';
-	case InstanceNotFound    = 'instance_not_found';
+	/**
+	 * The key, and the installation if one was named, is good.
+	 */
+	case Ok = 'ok';
+
+	/**
+	 * No such key, or a key for another product.
+	 */
+	case NotFound = 'not_found';
+
+	/**
+	 * The licence was taken back, usually by a refund.
+	 */
+	case Revoked = 'revoked';
+
+	/**
+	 * The licence, or the subscription it follows, has lapsed.
+	 */
+	case Expired = 'expired';
+
+	/**
+	 * The key is good but the installation is not one of its seats.
+	 */
+	case InstanceNotFound = 'instance_not_found';
+
+	/**
+	 * The key is good but the installation's seat was released.
+	 */
 	case InstanceDeactivated = 'instance_deactivated';
-	case LimitReached        = 'limit_reached';
-	case ProductRequired     = 'product_required';
-	case Unavailable         = 'unavailable';
+
+	/**
+	 * Every seat is taken.
+	 */
+	case LimitReached = 'limit_reached';
+
+	/**
+	 * For the caller's endpoint to return when no product was sent; never returned by {@see Seats}.
+	 */
+	case ProductRequired = 'product_required';
+
+	/**
+	 * For the caller to return when licensing is switched off; never returned by {@see Seats}.
+	 */
+	case Unavailable = 'unavailable';
 
 	/**
 	 * A sentence a client can show a person.

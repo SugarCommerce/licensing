@@ -15,7 +15,7 @@ A licence server looks like three endpoints and a counter. The holes are all in 
 ## Features
 
 - ✅ **`validate()`** — the key, optionally one installation, optionally the product; precedence not found → revoked → expired → installation.
-- 💺 **`claim()`** — inside your transaction; instance ids issued here (128 random bits); a fingerprint only as an idempotency hint, so a reinstall gets its seat back.
+- 💺 **`claim()`** — inside your transaction; instance ids issued here (128 random bits); a fingerprint only as an idempotency hint, so a reinstall gets its seat back. The hint returns the seat (instance id included) to whoever presents it with the key, so have clients send a random value kept from first run, not a URL or hostname.
 - 🔓 **`release()`** — by the issued instance id only, scoped to the key; the seat is kept, inactive, so a key's history stays visible.
 - 🗣️ **`Verdict`** — stable wire values with a sentence for each; `Claim` says whether a seat changed hands, so check-ins on startup are not announced.
 - 🗄️ **`Store`** — eight methods; your tables, your expiry rules, your hashing of addresses.

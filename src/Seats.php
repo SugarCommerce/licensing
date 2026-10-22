@@ -27,6 +27,11 @@ namespace SugarCommerce\Licensing;
  *   name, both guessable, and anything guessable releases somebody else's
  *   seat. The id is issued here, 128 random bits; a fingerprint survives
  *   only as an idempotency hint, so a reinstall gets its seat back.
+ *   Note what that hint does: claim() hands the seat, instance id and
+ *   all, to whoever presents the key with a matching fingerprint. With a
+ *   guessable fingerprint (a site URL), anybody holding the key can learn
+ *   another installation's instance id and release it. Have clients send
+ *   a value they generated at random on first run and kept, or none.
  * - **A race on the last seat.** The count and the claim happen inside
  *   {@see Store::atomically()}.
  * - **Only checking the key.** A key that is fine but whose seat was
@@ -41,6 +46,8 @@ namespace SugarCommerce\Licensing;
 final readonly class Seats {
 
 	/**
+	 * Bind the rules to a store.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @param Store    $store Where licences and seats live.
@@ -59,7 +66,10 @@ final readonly class Seats {
 	 * @param string $key      Licence key.
 	 * @param string $instance An instance id to check as well, or ''.
 	 * @param string $product  The product the caller sells, or '' to skip
-	 *                         that check (your own screens only).
+	 *                         that check (your own screens only). Any
+	 *                         endpoint a seller's software calls must pass
+	 *                         it, or a key bought for another product, at
+	 *                         any price, passes.
 	 *
 	 * @return Check
 	 */
@@ -96,7 +106,10 @@ final readonly class Seats {
 	 * @param string $key         Licence key.
 	 * @param string $name        What a person calls the machine or site.
 	 * @param string $fingerprint Stable client identifier, or ''. An
-	 *                            idempotency hint, never an authority.
+	 *                            idempotency hint, never an authority; but
+	 *                            whoever presents it with the key is given
+	 *                            the matching seat's instance id, so it
+	 *                            should be random, not a URL or hostname.
 	 * @param string $ip          The client's address, for the store.
 	 * @param string $product     The product the caller sells, or ''.
 	 *
@@ -145,13 +158,15 @@ final readonly class Seats {
 	/**
 	 * The body of claim(), inside the store's transaction.
 	 *
+	 * @since 1.0.0
+	 *
 	 * @param string $key         Licence key.
 	 * @param string $name        Name.
 	 * @param string $fingerprint Fingerprint, or ''.
 	 * @param string $ip          Address.
 	 * @param string $product     Product, or ''.
 	 *
-	 * @return Activation
+	 * @return Activation The claim, or why it was refused.
 	 */
 	private function take( string $key, string $name, string $fingerprint, string $ip, string $product ): Activation {
 		$check = $this->validate( $key, '', $product );
@@ -188,7 +203,9 @@ final readonly class Seats {
 	/**
 	 * The time.
 	 *
-	 * @return int
+	 * @since 1.0.0
+	 *
+	 * @return int The fixed time when one was given, else the clock.
 	 */
 	private function now(): int {
 		return $this->now ?? time();
